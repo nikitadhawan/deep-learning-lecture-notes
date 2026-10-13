@@ -26,7 +26,7 @@ By *order* we mean that there is a natural way to decompose the joint distributi
 Why does the order matter? Beyond letting us write the sequence down, it lets us use the **chain rule of probability** to express the joint probability of the whole sequence as a product of conditional probabilities:
 
 ::: {.boxed-eq}
-$$p(\bm{x}_1, \bm{x}_2, \dots, \bm{x}_T) = p(\bm{x}_1)\, p(\bm{x}_2 \mid \bm{x}_1)\, p(\bm{x}_3 \mid \bm{x}_2, \bm{x}_1) \cdots$$
+$$p(\bm{x}_1, \bm{x}_2, \dots, \bm{x}_T) = p(\bm{x}_1)\, p(\bm{x}_2 \mid \bm{x}_1)\, p(\bm{x}_3 \mid \bm{x}_2, \bm{x}_1) \cdots p(\bm{x}_T \mid \bm{x}_{T-1}, \dots, \bm{x}_1)$$
 :::
 
 Any set of random variables can be decomposed this way; nothing about it is special to sequences. But because a sequence has a natural order, this particular decomposition makes sense: if the first element we observe is $\bm{x}_1$, we can express $p(\bm{x}_1)$; if the next is $\bm{x}_2$, we can ask for its probability given $\bm{x}_1$; and so on. Asking instead for the probability of $\bm{x}_3$ given $\bm{x}_{10}$ would be awkward, because we would be conditioning on something we have not observed yet. Text is the main example we will use, but there are many others — a spectrogram is a sequence of spectra over time, a video is a sequence of images.
@@ -150,7 +150,7 @@ To process a sequence rather than a single input, we make the hidden state a seq
 $$\bm{h}_t = \sigma(\bm{W}_x \bm{x}_t + \bm{W}_h \bm{h}_{t-1} + \bm{b}_h), \qquad \bm{o}_t = \bm{W}_o \bm{h}_t + \bm{b}_o.$$
 :::
 
-The only structural change is the term $\bm{W}_h \bm{h}_{t-1}$, a recurrent connection from $\bm{h}_{t-1}$ to $\bm{h}_t$ through a learned weight matrix $\bm{W}_h$. To use the model, we feed in $\bm{x}_1$ to get $\bm{h}_1$, use $\bm{h}_1$ to produce $\bm{o}_1$ and hence a distribution over $\bm{x}_2$; then feed in $\bm{x}_2$ together with the retained $\bm{h}_1$ to get $\bm{h}_2$ and a distribution over $\bm{x}_3$; and so on. We carry the hidden state from one step to the next.
+The only structural change is the term $\bm{W}_h \bm{h}_{t-1}$, a recurrent connection from $\bm{h}_{t-1}$ to $\bm{h}_t$ through a learned weight matrix $\bm{W}_h$. To use the model, we start from an initial hidden state $\bm{h}_0$ (discussed later) and feed in $\bm{x}_1$ to get $\bm{h}_1$, use $\bm{h}_1$ to produce $\bm{o}_1$ and hence a distribution over $\bm{x}_2$; then feed in $\bm{x}_2$ together with the retained $\bm{h}_1$ to get $\bm{h}_2$ and a distribution over $\bm{x}_3$; and so on. We carry the hidden state from one step to the next.
 
 ```{=html}
 <div style="overflow-x:auto; margin:1.5rem 0;">
@@ -205,7 +205,7 @@ The tools for training this model are the ones we already have. A recurrent netw
 
 ## Backpropagation Through Time {#sec-bptt}
 
-One way to picture backpropagation in a recurrent network is to **unroll** it: apply the same layer over and over, feeding in $\bm{x}_t$ at each step to update $\bm{h}_t$, and then backpropagate from the outputs back to the inputs. To keep the notation manageable, write the hidden-state update as a function $f$ and the output as a function $g$:
+One way to picture backpropagation in a recurrent network is to **unroll** it: apply the same layer over and over, feeding in $\bm{x}_t$ at each step to update $\bm{h}_t$, and then backpropagate from the outputs back to the inputs. Backpropagation on this unrolled graph is called backpropagation through time. To keep the notation manageable, write the hidden-state update as a function $f$ and the output as a function $g$:
 
 $$\bm{h}_t = f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h), \qquad \bm{o}_t = g(\bm{h}_t, \bm{W}_o).$$
 
@@ -221,13 +221,13 @@ The first factor is the gradient of a softmax cross-entropy loss, which we have 
 
 ### The recurrent term {#sec-bptt-term}
 
-What makes $d\bm{h}_t / d\bm{W}_h$ hard is that $\bm{W}_h$ affects $\bm{h}_t$ through two paths. It contributes **directly**, because $\bm{h}_t$ is computed using $\bm{W}_h$; and it contributes **indirectly**, because $\bm{h}_t$ depends on $\bm{h}_{t-1}$, which itself depends on $\bm{W}_h$, which depends on $\bm{h}_{t-2}$, and so on back to the start. When a variable reaches another through two paths, we sum the derivative along each:
+What makes $d\bm{h}_t / d\bm{W}_h$ hard is that $\bm{W}_h$ affects $\bm{h}_t$ through two paths. It contributes **directly**, because $\bm{h}_t$ is computed using $\bm{W}_h$; and it contributes **indirectly**, because $\bm{h}_t$ depends on $\bm{h}_{t-1}$, which itself depends on $\bm{W}_h$ and on $\bm{h}_{t-2}$, and so on back to the start. When a variable reaches another through two paths, we sum the derivative along each:
 
-$$\frac{d\bm{h}_t}{d\bm{W}_h} = \frac{d f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{d\bm{W}_h} + \frac{d f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{d\bm{h}_{t-1}}\, \frac{d\bm{h}_{t-1}}{d\bm{W}_h}.$$
+$$\frac{d\bm{h}_t}{d\bm{W}_h} = \frac{\partial f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{\partial\bm{W}_h} + \frac{\partial f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{\partial\bm{h}_{t-1}}\, \frac{d\bm{h}_{t-1}}{d\bm{W}_h}.$$
 
 The final factor $d\bm{h}_{t-1}/d\bm{W}_h$ has the same form as the term we started with, one step earlier — a recursion. To see its solution, abbreviate
 
-$$a_t = \frac{d\bm{h}_t}{d\bm{W}_h}, \qquad b_t = \frac{d f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{d\bm{W}_h}, \qquad c_t = \frac{d f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{d\bm{h}_{t-1}},$$
+$$a_t = \frac{d\bm{h}_t}{d\bm{W}_h}, \qquad b_t = \frac{\partial f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{\partial\bm{W}_h}, \qquad c_t = \frac{\partial f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{\partial\bm{h}_{t-1}},$$
 
 so that the recursion is $a_t = b_t + c_t\, a_{t-1}$. Since there is no $\bm{h}_{-1}$ to depend on, $a_0 = 0$. Unrolling,
 
@@ -240,12 +240,12 @@ $$a_t = b_t + \sum_{i=1}^{t-1} \left( \prod_{j=i+1}^{t} c_j \right) b_i.$$
 Substituting the definitions back in gives the recurrent term in full:
 
 ::: {.boxed-eq}
-$$\frac{d\bm{h}_t}{d\bm{W}_h} = \frac{d f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{d\bm{W}_h} + \sum_{i=1}^{t-1} \left( \prod_{j=i+1}^{t} \frac{d f(\bm{x}_j, \bm{h}_{j-1}, \bm{W}_h)}{d\bm{h}_{j-1}} \right) \frac{d f(\bm{x}_i, \bm{h}_{i-1}, \bm{W}_h)}{d\bm{W}_h}.$$
+$$\frac{d\bm{h}_t}{d\bm{W}_h} = \frac{\partial f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h)}{\partial\bm{W}_h} + \sum_{i=1}^{t-1} \left( \prod_{j=i+1}^{t} \frac{\partial f(\bm{x}_j, \bm{h}_{j-1}, \bm{W}_h)}{\partial\bm{h}_{j-1}} \right) \frac{\partial f(\bm{x}_i, \bm{h}_{i-1}, \bm{W}_h)}{\partial\bm{W}_h}.$$
 :::
 
 ### Why recurrent networks are hard to train {#sec-exploding-vanishing}
 
-To see what this means, take a linear vanilla RNN, where $f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h) = \bm{W}_x \bm{x}_t + \bm{W}_h \bm{h}_{t-1} + \bm{b}_h$. Then the direct term $d f / d\bm{W}_h$ is $\bm{h}_{t-1}$ (and each $\bm{b}_i = \bm{h}_{i-1}$), while each factor $d f / d\bm{h}_{j-1}$ is $\bm{W}_h$, so
+To see what this means, take a linear vanilla RNN, where $f(\bm{x}_t, \bm{h}_{t-1}, \bm{W}_h) = \bm{W}_x \bm{x}_t + \bm{W}_h \bm{h}_{t-1} + \bm{b}_h$. Then the direct term $\partial f / \partial\bm{W}_h$ is $\bm{h}_{t-1}$ (and each $b_i = \bm{h}_{i-1}$), while each factor $\partial f / \partial\bm{h}_{j-1}$ is $\bm{W}_h$, so
 
 $$\frac{d\bm{h}_t}{d\bm{W}_h} = \bm{h}_{t-1} + \sum_{i=1}^{t-1} \left( \prod_{j=i+1}^{t} \bm{W}_h \right) \bm{h}_{i-1}.$$
 
@@ -321,7 +321,7 @@ Just as we stack layers in a feedforward network, we can stack them in a recurre
 
 Second, we can have **bidirectional RNNs**. So far we have processed the sequence from left to right, but we can process it in any order, and a common choice is to run two layers in parallel with separate parameters — one forward and one backward:
 
-$$\overrightarrow{\bm{h}}_t = \overrightarrow{f}\!\big(\bm{x}_t, \overrightarrow{\bm{h}}_{t-1}\big), \qquad \overleftarrow{\bm{h}}_t = \overleftarrow{f}\!\big(\bm{x}_{T-t}, \overleftarrow{\bm{h}}_{t-1}\big).$$
+$$\overrightarrow{\bm{h}}_t = \overrightarrow{f}\!\big(\bm{x}_t, \overrightarrow{\bm{h}}_{t-1}\big), \qquad \overleftarrow{\bm{h}}_t = \overleftarrow{f}\!\big(\bm{x}_t, \overleftarrow{\bm{h}}_{t+1}\big).$$
 
 Concatenating the forward and backward states at a step gives a representation with information about the full past and the full future. This would not make sense for predicting the next element — we cannot look ahead at what we are trying to predict — but it does make sense when we already have the whole input sequence and want to, for example, classify it.
 
@@ -345,7 +345,7 @@ A different use is **sequence classification**: predicting a single class from a
 
 $$\bm{h}_t = f(\bm{x}_t, \bm{h}_{t-1}), \qquad \bm{o} = \bm{W}_o \bm{h}_T + \bm{b}_o.$$
 
-Since we have the full sequence when making the prediction, a bidirectional RNN can make sense here. The final hidden state $\bm{h}_T$ should carry information about the entire input. Sequence classification covers tasks such as predicting the topic of a document, whether a movie review is positive or negative, or whether an email — a sequence of words fed through the RNN, with the final state passed to a classifier — is spam.
+The final hidden state $\bm{h}_T$ should carry information about the entire input. Since we have the full sequence when making the prediction, a bidirectional RNN can make sense here, combining the final forward state $\overrightarrow{\bm{h}}_T$ with the final backward state $\overleftarrow{\bm{h}}_1$. Sequence classification covers tasks such as predicting the topic of a document, whether a movie review is positive or negative, or whether an email — a sequence of words fed through the RNN, with the final state passed to a classifier — is spam.
 
 ---
 
